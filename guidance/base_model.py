@@ -117,9 +117,10 @@ class BaseModel(metaclass=ABCMeta):
             pred_x0s: [B,*]
         """
         
-        # TODO: Implement compute_tweedie
-        # raise NotImplementedError("compute_tweedie is not implemented yet.")
-        pred_x0s = 1 / alphas[timestep] * (xts - (1-alphas[timestep]) * eps)
+        # Note: alphas and sigmas are already square roots from the caller
+        # alphas[timestep] = √α_t, sigmas[timestep] = √(1-α_t)
+        # Tweedie formula: x^(0) = (x^(t) - √(1-α_t) * eps) / √α_t
+        pred_x0s = (xts - sigmas[timestep] * eps) / alphas[timestep]
         return pred_x0s
 
 
@@ -136,7 +137,33 @@ class BaseModel(metaclass=ABCMeta):
         
         # TODO: Implement compute_prev_state
         # raise NotImplementedError("compute_prev_state is not implemented yet.")
+        if hasattr(self.model, 'scheduler'):
+            scheduler = self.model.scheduler
+        else:            # For deepfloyd model
+            scheduler = self.stage_1.scheduler
         
+        # get alphas values for current and previous timesteps
+        alpha_t = scheduler.alphas_cumprod[timestep].to(self.device)
+        
+        # Get previous timestep 
+        prev_timestep = timestep - scheduler.config.num_train_timesteps // scheduler.num_inference_steps
+        prev_timestep = torch.where(prev_timestep < 0, torch.zeros_like(prev_timestep), prev_timestep)
+
+        alpha_t_prev = scheduler.alphas_cumprod[prev_timestep].to(self.device)
+
+        # DDIM deterministic reverse step
+        alpha_t = alpha_t.view(-1, 1, 1, 1)
+        alpha_t_prev = alpha_t_prev.view(-1, 1, 1, 1)
+
+        pred_dir = xts - torch.sqrt(alpha_t) * pred_x0s
+
+        # compute ddim formula
+        pred_prev_sample = (
+            torch.sqrt(alpha_t_prev) * pred_x0s + 
+            torch.sqrt((1 - alpha_t_prev) / (1 - alpha_t)) * pred_dir
+        )
+        
+        return pred_prev_sample
         
         
     def one_step_process(
@@ -150,12 +177,12 @@ class BaseModel(metaclass=ABCMeta):
         """
         
         xts = input_params["xts"]
-
+        
         eps_preds = self.compute_noise_preds(xts, timestep, **kwargs)
         x0s = self.compute_tweedie(
             xts, eps_preds, timestep, alphas, sigmas, **kwargs
         )
-        
+            
         # Synchronization using SyncTweedies 
         z0s = self.inverse_mapping(x0s, var_type="tweedie", **kwargs) # Comment out to skip synchronization
         x0s = self.forward_mapping(z0s, bg=x0s, **kwargs) # Comment out to skip synchronization

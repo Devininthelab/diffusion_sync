@@ -45,3 +45,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # for wide image
+    # python main.py --app wide_image --prompt "Fantasy mountainous terrain with ancient ruins carved into cliffs, glowing crystals in the cave walls, flying dragons in the distance, dark clouds, dramatic fantasy lighting, concept art style, by Artgerm and WLOP" --tag wide_image --save_dir_now
