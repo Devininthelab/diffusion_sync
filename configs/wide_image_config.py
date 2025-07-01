@@ -33,7 +33,7 @@ def load_wide_image_config():
     parser.add_argument('--latent_instance_size', type=int, default=64)
     parser.add_argument('--rgb_instance_size', type=int, default=512)
     parser.add_argument('--panorama_height', type=int, default=512)
-    parser.add_argument('--panorama_width', type=int, default=3072)
+    parser.add_argument('--panorama_width', type=int, default=3072) # 3072 // 512 = 6 
     
     # Evaluation
     parser.add_argument("--eval_pos", nargs="*", default=[0, 128, 256, 384, 512, 640, 768, 896])

@@ -118,7 +118,10 @@ class BaseModel(metaclass=ABCMeta):
         """
         
         # TODO: Implement compute_tweedie
-        raise NotImplementedError("compute_tweedie is not implemented yet.")
+        # raise NotImplementedError("compute_tweedie is not implemented yet.")
+        pred_x0s = 1 / alphas[timestep] * (xts - (1-alphas[timestep]) * eps)
+        return pred_x0s
+
 
         
     def compute_prev_state(
@@ -132,7 +135,9 @@ class BaseModel(metaclass=ABCMeta):
         """
         
         # TODO: Implement compute_prev_state
-        raise NotImplementedError("compute_prev_state is not implemented yet.")
+        # raise NotImplementedError("compute_prev_state is not implemented yet.")
+        
+        
         
     def one_step_process(
         self, input_params, timestep, alphas, sigmas, **kwargs

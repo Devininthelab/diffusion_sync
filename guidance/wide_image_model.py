@@ -34,9 +34,9 @@ class WideImageModel(BaseModel):
             
             
     def init_mapper(self, **kwargs):
-        self.latent_canonical_height = self.config.panorama_height // 8
-        self.latent_canonical_width = self.config.panorama_width // 8
-        self.latent_instance_size = self.config.latent_instance_size  # only for SD
+        self.latent_canonical_height = self.config.panorama_height // 8 # 64
+        self.latent_canonical_width = self.config.panorama_width // 8  # 384
+        self.latent_instance_size = self.config.latent_instance_size  # only for SD = 64 for SD
         self.rgb_instance_size = self.config.rgb_instance_size
 
         # Mapper guiding start / end of width / height in canonical space 
@@ -51,6 +51,7 @@ class WideImageModel(BaseModel):
 
 
     def get_views(self, panorama_height, panorama_width, window_size=None, stride=8):
+        # Return the bboxes of views: h_start, h_end, w_start, w_end
         assert window_size != None
         num_blocks_height = (panorama_height - window_size) // stride + 1
         num_blocks_width = (panorama_width - window_size) // stride + 1
@@ -87,8 +88,13 @@ class WideImageModel(BaseModel):
         """
 
         # TODO: Implement forward_mapping
-        raise NotImplementedError("forward_mapping is not implemented yet.")
+        #raise NotImplementedError("forward_mapping is not implemented yet.")
 
+        xts = []
+        for h_start, h_end, w_start, w_end in self.mapper:
+            xts_i = z_t[:, :, h_start:h_end, w_start:w_end]
+            xts.append(xts_i)
+        xts = torch.cat(xts, dim=0)
         return xts
         
 
@@ -102,7 +108,17 @@ class WideImageModel(BaseModel):
         """
 
         # TODO: Implement inverse_mapping
-        raise NotImplementedError("inverse_mapping is not implemented yet.")
+        # raise NotImplementedError("inverse_mapping is not implemented yet.")
+        self.count.zero_()
+        self.value.zero_()
+
+        for (h_start, h_end, w_start, w_end), xts_i in zip(self.mapper, x_ts):
+            self.value[:, :, h_start:h_end, w_start:w_end] += xts_i
+            self.count[:, :, h_start:h_end, w_start:w_end] += 1
+        z_t = torch.where(self.count > 0, self.value / self.count, self.value)
+        return z_t
+
+
 
 
     def init_prompt_embeddings(
@@ -178,8 +194,8 @@ class WideImageModel(BaseModel):
         num_timesteps = self.model.scheduler.config.num_train_timesteps
         num_warmup_steps = len(timesteps) - num_inference_steps * self.model.scheduler.order
         
-        alphas = self.model.scheduler.alphas_cumprod ** (0.5)
-        sigmas = (1 - self.model.scheduler.alphas_cumprod) ** (0.5)
+        alphas = self.model.scheduler.alphas_cumprod ** (0.5) # it's alr sqrt of alphas right
+        sigmas = (1 - self.model.scheduler.alphas_cumprod) ** (0.5) # it's alr sigmas sqrt, with variance = 0
         
         func_params = {
             "num_timesteps": num_timesteps,
