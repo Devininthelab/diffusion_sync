@@ -79,7 +79,7 @@ class AmbiguousImageModel(BaseModel):
         print(f"[*] Mappers: {views_names}")
         self.views = get_views(
             views_names, self.config.rotate_angle
-        )
+        ) # two views: identity and rotate_cw
 
     def init_prompt_embeddings(self, prompts: Optional[List] = None):
         if prompts is None:

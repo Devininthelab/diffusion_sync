@@ -46,4 +46,7 @@ def main():
 if __name__ == "__main__":
     main()
     # for wide image
-    # python main.py --app wide_image --prompt "Fantasy mountainous terrain with ancient ruins carved into cliffs, glowing crystals in the cave walls, flying dragons in the distance, dark clouds, dramatic fantasy lighting, concept art style, by Artgerm and WLOP" --tag wide_image --save_dir_now
+    # python main.py --app wide_image --prompt "A mountainous region during golden hour, warm orange sunlight hitting rocky peaks, deep valleys filled with mist, birds flying above, cinematic lighting, hyper-detailed, photorealistic landscape" --tag wide_image --save_dir_now
+
+    # for ambiguous image
+    # python main.py --app ambiguous_image --prompts 'A car' 'A bike' --tag ambiguous_image --save_dir_now
