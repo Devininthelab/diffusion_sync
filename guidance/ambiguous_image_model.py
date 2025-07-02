@@ -197,7 +197,7 @@ class AmbiguousImageModel(BaseModel):
         Output:
             noise_preds: [N,C,H,W]
         """
-        stage_2 = kwargs.get("stage_2")
+        stage_2 = kwargs.get("stage_2") 
         if stage_2:
             orig_xts_shape = xts.shape
             C, H, W = xts.shape[-3], xts.shape[-2], xts.shape[-1]
@@ -231,7 +231,7 @@ class AmbiguousImageModel(BaseModel):
             C, H, W = xts.shape[-3], xts.shape[-2], xts.shape[-1]
             xts = xts.reshape(-1, C, H, W)
 
-            xts_input = torch.cat([xts] * 2)
+            xts_input = torch.cat([xts] * 2) # [*] xts_input: torch.Size([4, 3, 64, 64])
             xts_input = self.stage_1.scheduler.scale_model_input(xts_input, ts)
 
             noise_preds = self.stage_1.unet(
@@ -240,7 +240,8 @@ class AmbiguousImageModel(BaseModel):
                 encoder_hidden_states=self.prompt_embeds,
                 cross_attention_kwargs=None,
                 return_dict=False,
-            )[0]
+            )[0] # [*] noise_preds: torch.Size([4, 6, 64, 64]); predict noise + variance
+            
             noise_preds_uncond, noise_preds_text = noise_preds.chunk(2)
             noise_preds = noise_preds_uncond + self.config.guidance_scale * (
                 noise_preds_text - noise_preds_uncond
@@ -263,13 +264,15 @@ class AmbiguousImageModel(BaseModel):
         xts = self.initialize_latent(
             "instance", generator=generator, model=self.stage_1
         )
+        # print(f"[*] Initialized xts: {xts.shape}") # [*] Initialized xts: torch.Size([2, 3, 64, 64])
         zts = None
 
         input_params = {"zts": zts, "xts": xts}
         timesteps = self.stage_1.scheduler.timesteps
         
-        alphas = torch.sqrt(self.stage_1.scheduler.alphas_cumprod).to(self.device)
-        sigmas = torch.sqrt(1 - self.stage_1.scheduler.alphas_cumprod).to(self.device)
+        # Ensure dtype consistency for alphas and sigmas
+        alphas = torch.sqrt(self.stage_1.scheduler.alphas_cumprod).to(device=self.device, dtype=xts.dtype)
+        sigmas = torch.sqrt(1 - self.stage_1.scheduler.alphas_cumprod).to(device=self.device, dtype=xts.dtype)
         for i, t in enumerate(timesteps):
             out_params = self.one_step_process(
                 input_params,
@@ -285,9 +288,14 @@ class AmbiguousImageModel(BaseModel):
             
             """ Logging """
             if (i + 1) % self.config.log_step == 0:
+                if t == 0:
+                    print(log_x_prevs.shape, log_x0s.shape)
                 log_x_prev_imgs = self.tensor_to_pil_img(log_x_prevs)
                 log_x0_imgs = self.tensor_to_pil_img(log_x0s)
-
+                
+                # test image to see noise hapepning
+                test_img = merge_images([log_x_prev_imgs])
+                test_img.save(f"{self.intermediate_dir}/test_i={i}_t={t}.png")
                 log_img = merge_images([log_x_prev_imgs, log_x0_imgs])
                 log_img.save(f"{self.intermediate_dir}/i={i}_t={t}.png")
 
@@ -316,11 +324,12 @@ class AmbiguousImageModel(BaseModel):
         image = self.stage_2.preprocess_image(previous_stage_imgs, 1, self.device)
         upscaled = F.interpolate(
             image, (height, width), mode="bilinear", align_corners=True
-        )
+        ).to(dtype=xts.dtype)
 
         noise_level = torch.tensor(
             [self.config.stage2_noise_level] * 2 * upscaled.shape[0],
             device=self.device,
+            dtype=xts.dtype,
         )
 
         for i, t in enumerate(timesteps):

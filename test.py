@@ -1,32 +1,51 @@
-# Get scheduler from the model
-        if hasattr(self.model, 'scheduler'):
-            scheduler = self.model.scheduler
-        else:
-            # For deepfloyd model
-            scheduler = self.stage_1.scheduler
-            
-        # Get alpha values for current and previous timesteps
-        alpha_t = scheduler.alphas_cumprod[timestep]
-        
-        # Get previous timestep
-        prev_timestep = timestep - scheduler.config.num_train_timesteps // scheduler.num_inference_steps
-        prev_timestep = torch.where(prev_timestep < 0, torch.zeros_like(prev_timestep), prev_timestep)
-        
-        alpha_t_prev = scheduler.alphas_cumprod[prev_timestep]
-        
-        # Compute DDIM reverse step: ψ^(t)(x^(t), x^(0))
-        # ψ^(t)(x^(t), x^(0)) = √α_{t-1} * x^(0) + √((1-α_{t-1})/(1-α_t)) * (x^(t) - √α_t * x^(0))
-        
-        alpha_t = alpha_t.view(-1, 1, 1, 1)  # Reshape for broadcasting
-        alpha_t_prev = alpha_t_prev.view(-1, 1, 1, 1)
-        
-        # Compute the direction pointing from x_t to x_0
-        pred_dir = xts - torch.sqrt(alpha_t) * pred_x0s
-        
-        # Compute previous sample
-        pred_prev_sample = (
-            torch.sqrt(alpha_t_prev) * pred_x0s + 
-            torch.sqrt((1 - alpha_t_prev) / (1 - alpha_t)) * pred_dir
-        )
-        
-        return pred_prev_sample
+from diffusers import DiffusionPipeline
+from diffusers.utils import pt_to_pil
+import torch
+
+# stage 1
+stage_1 = DiffusionPipeline.from_pretrained("DeepFloyd/IF-I-M-v1.0", variant="fp16", torch_dtype=torch.float16)
+stage_1.enable_model_cpu_offload()
+
+# stage 2
+stage_2 = DiffusionPipeline.from_pretrained(
+    "DeepFloyd/IF-II-M-v1.0", text_encoder=None, variant="fp16", torch_dtype=torch.float16
+)
+stage_2.enable_model_cpu_offload()
+
+# # stage 3
+# safety_modules = {
+#     "feature_extractor": stage_1.feature_extractor,
+#     "safety_checker": stage_1.safety_checker,
+#     "watermarker": stage_1.watermarker,
+# }
+# stage_3 = DiffusionPipeline.from_pretrained(
+#     "stabilityai/stable-diffusion-x4-upscaler", **safety_modules, torch_dtype=torch.float16
+# )
+# stage_3.enable_model_cpu_offload()
+
+prompt = 'a photo of a kangaroo wearing an orange hoodie and blue sunglasses standing in front of the eiffel tower holding a sign that says "very deep learning"'
+generator = torch.manual_seed(1)
+
+# text embeds
+prompt_embeds, negative_embeds = stage_1.encode_prompt(prompt)
+
+# stage 1
+stage_1_output = stage_1(
+    prompt_embeds=prompt_embeds, negative_prompt_embeds=negative_embeds, generator=generator, output_type="pt"
+).images
+pt_to_pil(stage_1_output)[0].save("./if_stage_I.png")
+
+# stage 2
+stage_2_output = stage_2(
+    image=stage_1_output,
+    prompt_embeds=prompt_embeds,
+    negative_prompt_embeds=negative_embeds,
+    generator=generator,
+    output_type="pt",
+).images
+pt_to_pil(stage_2_output)[0].save("./if_stage_II.png")
+
+# stage 3
+# stage_3_output = stage_3(prompt=prompt, image=stage_2_output, noise_level=100, generator=generator).images
+# #stage_3_output[0].save("./if_stage_III.png")
+#make_image_grid([pt_to_pil(stage_1_output)[0], pt_to_pil(stage_2_output)[0], stage_3_output[0]], rows=1, rows=3)

@@ -100,7 +100,7 @@ class BaseModel(metaclass=ABCMeta):
                 self.model.vae.requires_grad_(False)
         else:
             self.stage_1.text_encoder.requires_grad_(False)
-            self.stage_2.unet.requires_grad_(False)
+            self.stage_1.unet.requires_grad_(False)
             self.stage_2.unet.requires_grad_(False)
             
             self.stage_1 = self.stage_1.to(self.device)
@@ -120,6 +120,13 @@ class BaseModel(metaclass=ABCMeta):
         # Note: alphas and sigmas are already square roots from the caller
         # alphas[timestep] = √α_t, sigmas[timestep] = √(1-α_t)
         # Tweedie formula: x^(0) = (x^(t) - √(1-α_t) * eps) / √α_t
+        if eps.shape[-3] != xts.shape[-3]:
+            # This one for deal with deepfloyd model, remove the variance as we dont need it
+            eps = eps[:, :xts.shape[-3], :, :]
+        
+        # Ensure eps has the same dtype as xts
+        eps = eps.to(dtype=xts.dtype)
+        
         pred_x0s = (xts - sigmas[timestep] * eps) / alphas[timestep]
         return pred_x0s
 
@@ -137,19 +144,23 @@ class BaseModel(metaclass=ABCMeta):
         
         # TODO: Implement compute_prev_state
         # raise NotImplementedError("compute_prev_state is not implemented yet.")
-        if hasattr(self.model, 'scheduler'):
+        if hasattr(self, 'model') and hasattr(self.model, 'scheduler'):
             scheduler = self.model.scheduler
         else:            # For deepfloyd model
             scheduler = self.stage_1.scheduler
         
         # get alphas values for current and previous timesteps
-        alpha_t = scheduler.alphas_cumprod[timestep].to(self.device)
+        alpha_t = scheduler.alphas_cumprod[timestep].to(xts.device, dtype=xts.dtype)
+        
+        # For the final step (t=0), return the predicted clean image directly, this will cause NaN as alph_t_prev and alpha_t are both 1
+        if timestep == 0:
+            return pred_x0s
         
         # Get previous timestep 
         prev_timestep = timestep - scheduler.config.num_train_timesteps // scheduler.num_inference_steps
         prev_timestep = torch.where(prev_timestep < 0, torch.zeros_like(prev_timestep), prev_timestep)
 
-        alpha_t_prev = scheduler.alphas_cumprod[prev_timestep].to(self.device)
+        alpha_t_prev = scheduler.alphas_cumprod[prev_timestep].to(xts.device, dtype=xts.dtype)
 
         # DDIM deterministic reverse step
         alpha_t = alpha_t.view(-1, 1, 1, 1)

@@ -49,4 +49,4 @@ if __name__ == "__main__":
     # python main.py --app wide_image --prompt "A mountainous region during golden hour, warm orange sunlight hitting rocky peaks, deep valleys filled with mist, birds flying above, cinematic lighting, hyper-detailed, photorealistic landscape" --tag wide_image --save_dir_now
 
     # for ambiguous image
-    # python main.py --app ambiguous_image --prompts 'A car' 'A bike' --tag ambiguous_image --save_dir_now
+    # python main.py --app ambiguous_image --prompts 'car' 'bike' --tag ambiguous_image --save_dir_now

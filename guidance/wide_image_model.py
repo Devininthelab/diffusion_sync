@@ -19,6 +19,8 @@ class WideImageModel(BaseModel):
         self.device = torch.device(f"cuda:{self.config.gpu}")
         super().__init__()
         self.initialize()
+
+        
         
         
     def initialize(self):
@@ -45,6 +47,7 @@ class WideImageModel(BaseModel):
         self.value = torch.zeros(1, 4, self.latent_canonical_height, self.latent_canonical_width).to(self.device)
         self.num_views = len(self.mapper)
 
+        # RGB mapper in canonical space, full panaroma image
         self.rgb_mapper = self.get_views(self.config.panorama_height, self.config.panorama_width, window_size=self.rgb_instance_size, stride=self.config.window_stride * 8)
         self.rgb_count = torch.zeros(1, 3, self.config.panorama_height, self.config.panorama_width).to(self.device)
         self.rgb_value = torch.zeros(1, 3, self.config.panorama_height, self.config.panorama_width).to(self.device)
@@ -84,7 +87,7 @@ class WideImageModel(BaseModel):
         Input:
             z_t: [1,C,H,W]
         Output:
-            {x_t^i}: [N,C,h,w], where N denotes # of variables.
+            {x_t^i}: [N,C,h,w], where N denotes # of instance images.
         """
 
         # TODO: Implement forward_mapping
@@ -109,13 +112,15 @@ class WideImageModel(BaseModel):
 
         # TODO: Implement inverse_mapping
         # raise NotImplementedError("inverse_mapping is not implemented yet.")
+
+        # remove cache
         self.count.zero_()
         self.value.zero_()
 
         for (h_start, h_end, w_start, w_end), xts_i in zip(self.mapper, x_ts):
             self.value[:, :, h_start:h_end, w_start:w_end] += xts_i
             self.count[:, :, h_start:h_end, w_start:w_end] += 1
-        z_t = torch.where(self.count > 0, self.value / self.count, self.value)
+        z_t = torch.where(self.count > 0, self.value / self.count, self.value) # multi diffusion step
         return z_t
 
 
@@ -153,7 +158,16 @@ class WideImageModel(BaseModel):
     
     def initialize_latent(self, generator, **kwargs):
         device=self.device
-        
+        """
+        https://github.com/huggingface/diffusers/blob/64a9210315459b8217259792f673106ff0053c13/src/diffusers/pipelines/stable_diffusion/pipeline_stable_diffusion.py#L694
+        The prepare_latents function init latents like this: 
+        shape = (
+            batch_size,
+            num_channels_latents,
+            int(height) // self.vae_scale_factor,
+            int(width) // self.vae_scale_factor,
+        )
+        """
         latent = self.model.prepare_latents(
             1, 
             4, 
@@ -163,7 +177,7 @@ class WideImageModel(BaseModel):
             device, 
             generator,
             None,)
-
+        # print("latent shape", latent.shape) # latent shape torch.Size([1, 4, 64, 384])
         return latent
     
 
@@ -187,15 +201,18 @@ class WideImageModel(BaseModel):
         
         self.model.scheduler.set_timesteps(
             self.config.num_inference_steps, device=self.device
-        )
-        timesteps = self.model.scheduler.timesteps
+        ) # 50 time steps
+        timesteps = self.model.scheduler.timesteps # 50 time steps in a range tensor([981, 961, 941, 921 ....])
         
-        num_inference_steps = self.config.num_inference_steps
-        num_timesteps = self.model.scheduler.config.num_train_timesteps
-        num_warmup_steps = len(timesteps) - num_inference_steps * self.model.scheduler.order
+        
+        num_inference_steps = self.config.num_inference_steps # 50
+        num_timesteps = self.model.scheduler.config.num_train_timesteps # 1000 for train steps
+        
+        num_warmup_steps = len(timesteps) - num_inference_steps * self.model.scheduler.order 
+        print(f"num_warmup_steps: {num_warmup_steps}") # 0 
         
         alphas = self.model.scheduler.alphas_cumprod ** (0.5) # it's alr sqrt of alphas right
-        sigmas = (1 - self.model.scheduler.alphas_cumprod) ** (0.5) # it's alr sigmas sqrt, with variance = 0
+        sigmas = (1 - self.model.scheduler.alphas_cumprod) ** (0.5) # it's alr sigmas sqrt, with eta = 0 for ddim 
         
         func_params = {
             "num_timesteps": num_timesteps,
@@ -214,6 +231,7 @@ class WideImageModel(BaseModel):
                     sigmas,
                     **func_params,
                 )
+                # out_params return x_t_1 have result
 
                 assert out_params["x_t_1"] != None or out_params["z_t_1"] != None
                 xts = out_params["x_t_1"]
@@ -245,6 +263,7 @@ class WideImageModel(BaseModel):
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.model.scheduler.order == 0):
                     progress_bar.update()
 
+        # For saving for each instance view
         save_each_view_dir = self.output_dir / "results"
         os.makedirs(save_each_view_dir, exist_ok=True)
         for view_idx in range(0, xts.shape[0]):
@@ -254,6 +273,8 @@ class WideImageModel(BaseModel):
             save_path = save_each_view_dir / f"{view_idx}_wrange_{w_start}_{w_end}.png"
             TF.to_pil_image(decoded[0].cpu()).save(save_path)
 
+
+        # For saving final canonical panorama image
         final_denoised = self.forward_mapping(
             self.inverse_mapping(out_params["x_t_1"])
         )
@@ -264,6 +285,7 @@ class WideImageModel(BaseModel):
         
         final_denoised_img.save(pano_img_path)
         
+        # For saving later for CLIP evaluation
         for pos in eval_pos:
             img = final_denoised_img.crop((pos, 0, pos+512, 512))
             img.save(os.path.join(self.output_dir, f"{prompt_key}_{pos}.png"))
