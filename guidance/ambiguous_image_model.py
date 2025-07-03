@@ -288,14 +288,9 @@ class AmbiguousImageModel(BaseModel):
             
             """ Logging """
             if (i + 1) % self.config.log_step == 0:
-                if t == 0:
-                    print(log_x_prevs.shape, log_x0s.shape)
                 log_x_prev_imgs = self.tensor_to_pil_img(log_x_prevs)
                 log_x0_imgs = self.tensor_to_pil_img(log_x0s)
                 
-                # test image to see noise hapepning
-                test_img = merge_images([log_x_prev_imgs])
-                test_img.save(f"{self.intermediate_dir}/test_i={i}_t={t}.png")
                 log_img = merge_images([log_x_prev_imgs, log_x0_imgs])
                 log_img.save(f"{self.intermediate_dir}/i={i}_t={t}.png")
 

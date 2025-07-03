@@ -1,0 +1,30 @@
+{
+    "app": "ambiguous_image",
+    "sampling_method": "ddim",
+    "prompts": [
+        "a painting of a deer",
+        "a painting of a truck"
+    ],
+    "stage_1_path": "DeepFloyd/IF-I-M-v1.0",
+    "stage_2_path": "DeepFloyd/IF-II-M-v1.0",
+    "model": "deepfloyd",
+    "sd_model_name": "deepfloyd",
+    "style": "an oilpainting of",
+    "num_inference_steps": 30,
+    "guidance_scale": 10,
+    "seed": 1,
+    "stage2_noise_level": 50,
+    "views_names": [
+        "identity",
+        "rotate_cw"
+    ],
+    "rotate_angle": 45,
+    "gpu": 0,
+    "initialize_xt_from_zt": false,
+    "initialize_same_xt": false,
+    "scaling_factor": 1.0,
+    "save_top_dir": "./eval_outputs",
+    "tag": "ambiguous_image",
+    "save_dir_now": true,
+    "log_step": 10
+}
